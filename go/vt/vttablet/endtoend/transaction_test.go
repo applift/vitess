@@ -1,6 +1,18 @@
-// Copyright 2015, Google Inc. All rights reserved.
-// Use of this source code is governed by a BSD-style
-// license that can be found in the LICENSE file.
+/*
+Copyright 2017 Google Inc.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
 
 package endtoend
 
@@ -34,7 +46,7 @@ func TestCommit(t *testing.T) {
 
 	query := "insert into vitess_test (intval, floatval, charval, binval) " +
 		"values(4, null, null, null)"
-	err := client.Begin()
+	err := client.Begin(false)
 	if err != nil {
 		t.Error(err)
 		return
@@ -130,7 +142,7 @@ func TestRollback(t *testing.T) {
 	vstart := framework.DebugVars()
 
 	query := "insert into vitess_test values(4, null, null, null)"
-	err := client.Begin()
+	err := client.Begin(false)
 	if err != nil {
 		t.Error(err)
 		return
@@ -304,7 +316,7 @@ func TestTxPoolSize(t *testing.T) {
 	vstart := framework.DebugVars()
 
 	client1 := framework.NewClient()
-	err := client1.Begin()
+	err := client1.Begin(false)
 	if err != nil {
 		t.Error(err)
 		return
@@ -331,7 +343,7 @@ func TestTxPoolSize(t *testing.T) {
 	}
 
 	client2 := framework.NewClient()
-	err = client2.Begin()
+	err = client2.Begin(false)
 	want := "connection limit exceeded"
 	if err == nil || !strings.Contains(err.Error(), want) {
 		t.Errorf("%v, must contain %s", err, want)
@@ -353,7 +365,7 @@ func TestTxTimeout(t *testing.T) {
 	catcher := framework.NewTxCatcher()
 	defer catcher.Close()
 	client := framework.NewClient()
-	err := client.Begin()
+	err := client.Begin(false)
 	if err != nil {
 		t.Error(err)
 		return
@@ -388,7 +400,7 @@ func TestForUpdate(t *testing.T) {
 		}
 
 		// We should not get errors here
-		err = client.Begin()
+		err = client.Begin(false)
 		if err != nil {
 			t.Error(err)
 			return
@@ -412,7 +424,7 @@ func TestPrepareRollback(t *testing.T) {
 
 	query := "insert into vitess_test (intval, floatval, charval, binval) " +
 		"values(4, null, null, null)"
-	err := client.Begin()
+	err := client.Begin(false)
 	if err != nil {
 		t.Error(err)
 		return
@@ -449,7 +461,7 @@ func TestPrepareCommit(t *testing.T) {
 
 	query := "insert into vitess_test (intval, floatval, charval, binval) " +
 		"values(4, null, null, null)"
-	err := client.Begin()
+	err := client.Begin(false)
 	if err != nil {
 		t.Error(err)
 		return
@@ -486,7 +498,7 @@ func TestPrepareReparentCommit(t *testing.T) {
 
 	query := "insert into vitess_test (intval, floatval, charval, binval) " +
 		"values(4, null, null, null)"
-	err := client.Begin()
+	err := client.Begin(false)
 	if err != nil {
 		t.Error(err)
 		return
@@ -535,7 +547,7 @@ func TestMMCommitFlow(t *testing.T) {
 
 	query := "insert into vitess_test (intval, floatval, charval, binval) " +
 		"values(4, null, null, null)"
-	err := client.Begin()
+	err := client.Begin(false)
 	if err != nil {
 		t.Error(err)
 	}
@@ -615,7 +627,7 @@ func TestMMRollbackFlow(t *testing.T) {
 
 	query := "insert into vitess_test (intval, floatval, charval, binval) " +
 		"values(4, null, null, null)"
-	err := client.Begin()
+	err := client.Begin(false)
 	if err != nil {
 		t.Error(err)
 	}
@@ -674,7 +686,7 @@ func TestWatchdog(t *testing.T) {
 
 	query := "insert into vitess_test (intval, floatval, charval, binval) " +
 		"values(4, null, null, null)"
-	err := client.Begin()
+	err := client.Begin(false)
 	if err != nil {
 		t.Error(err)
 	}
@@ -737,7 +749,7 @@ func TestUnresolvedTracking(t *testing.T) {
 
 	query := "insert into vitess_test (intval, floatval, charval, binval) " +
 		"values(4, null, null, null)"
-	err := client.Begin()
+	err := client.Begin(false)
 	if err != nil {
 		t.Error(err)
 		return
@@ -776,7 +788,7 @@ func TestManualTwopcz(t *testing.T) {
 	defer conn.Close()
 
 	// Successful prepare.
-	err = client.Begin()
+	err = client.Begin(false)
 	if err != nil {
 		t.Error(err)
 		return
@@ -795,7 +807,7 @@ func TestManualTwopcz(t *testing.T) {
 	}
 
 	// Failed transaction.
-	err = client.Begin()
+	err = client.Begin(false)
 	if err != nil {
 		t.Error(err)
 		return

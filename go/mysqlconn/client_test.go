@@ -1,3 +1,19 @@
+/*
+Copyright 2017 Google Inc.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreedto in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
 package mysqlconn
 
 import (
@@ -199,6 +215,37 @@ func testDupEntryWithRealDatabase(t *testing.T, params *sqldb.ConnParams) {
 	assertSQLError(t, err, ERDupEntry, SSDupKey, "Duplicate entry")
 }
 
+// testClientFoundRows tests if the CLIENT_FOUND_ROWS flag works.
+func testClientFoundRowsWithRealDatabase(t *testing.T, params *sqldb.ConnParams) {
+	ctx := context.Background()
+	conn, err := Connect(ctx, params)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+
+	if _, err := conn.ExecuteFetch("create table found_rows(id int, val int, primary key(id))", 0, false); err != nil {
+		t.Fatalf("create table failed: %v", err)
+	}
+	if _, err := conn.ExecuteFetch("insert into found_rows(id, val) values(1, 10)", 0, false); err != nil {
+		t.Fatalf("insert failed: %v", err)
+	}
+	qr, err := conn.ExecuteFetch("update found_rows set val=11 where id=1", 0, false)
+	if err != nil {
+		t.Fatalf("first update failed: %v", err)
+	}
+	if qr.RowsAffected != 1 {
+		t.Errorf("First update: RowsAffected: %d, want 1", qr.RowsAffected)
+	}
+	qr, err = conn.ExecuteFetch("update found_rows set val=11 where id=1", 0, false)
+	if err != nil {
+		t.Fatalf("second update failed: %v", err)
+	}
+	if qr.RowsAffected != 1 {
+		t.Errorf("Second update: RowsAffected: %d, want 1", qr.RowsAffected)
+	}
+}
+
 // testTLS tests our client can connect via SSL.
 func testTLS(t *testing.T, params *sqldb.ConnParams) {
 	// First make sure the official 'mysql' client can connect.
@@ -286,6 +333,13 @@ ssl-key=%v/server-key.pem
 	// DupEntry tests a duplicate key returns the right error.
 	t.Run("DupEntry", func(t *testing.T) {
 		testDupEntryWithRealDatabase(t, &params)
+	})
+
+	// ClientFoundRows tests the CLIENT_FOUND_ROWS flag.
+	foundRowsParams := params
+	foundRowsParams.Flags |= CapabilityClientFoundRows
+	t.Run("ClientFoundRows", func(t *testing.T) {
+		testClientFoundRowsWithRealDatabase(t, &foundRowsParams)
 	})
 
 	// Queries tests the query part of the API.
