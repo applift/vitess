@@ -106,6 +106,7 @@ for uid_index in $uids; do
     -file_backup_storage_root $VTDATAROOT/backups \
     -restore_from_backup \
     -port $port \
+    -enable-autocommit \
     -grpc_port $grpc_port \
     -service_map 'grpc-queryservice,grpc-tabletmanager,grpc-updatestream' \
     -pid_file $VTDATAROOT/$tablet_dir/vttablet.pid \
