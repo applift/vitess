@@ -1,11 +1,9 @@
 hostname=`hostname -f`
 vtctld_web_port=15000
-vtctld_host="vtmaster1.dca.applift.com"
-cell='applift'
-keyspace='fcapdb'
 
 script_root=`dirname "${BASH_SOURCE}"`
 source $script_root/zk.cfg
+source $script_root/cluster.cfg
 
 printf -v zkcfg ",%s" "${zkcfg[@]}"
 zkcfg=${zkcfg:1}

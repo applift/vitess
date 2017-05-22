@@ -6,9 +6,9 @@ set -e
 
 shard=${SHARD:-'0'}
 uid_base=${UID_BASE:-'100'}
-port_base=$[15000 + $uid_base]
-grpc_port_base=$[16000 + $uid_base]
-mysql_port_base=$[17000 + $uid_base]
+port_base=$[30000 + $uid_base]
+grpc_port_base=$[40000 + $uid_base]
+mysql_port_base=$[50000 + $uid_base]
 tablet_hostname=`hostname`
 
 script_root=`dirname "${BASH_SOURCE}"`
