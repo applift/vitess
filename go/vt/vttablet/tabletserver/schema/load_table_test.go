@@ -25,8 +25,8 @@ import (
 
 	"golang.org/x/net/context"
 
-	"github.com/youtube/vitess/go/mysqlconn"
-	"github.com/youtube/vitess/go/mysqlconn/fakesqldb"
+	"github.com/youtube/vitess/go/mysql"
+	"github.com/youtube/vitess/go/mysql/fakesqldb"
 	"github.com/youtube/vitess/go/sqltypes"
 	"github.com/youtube/vitess/go/vt/sqlparser"
 	"github.com/youtube/vitess/go/vt/vttablet/tabletserver/connpool"
@@ -148,10 +148,10 @@ func TestLoadTableMessage(t *testing.T) {
 	db.AddQuery(
 		"show index from test_table",
 		&sqltypes.Result{
-			Fields:       mysqlconn.ShowIndexFromTableFields,
+			Fields:       mysql.ShowIndexFromTableFields,
 			RowsAffected: 1,
 			Rows: [][]sqltypes.Value{
-				mysqlconn.ShowIndexFromTableRow("test_table", true, "PRIMARY", 1, "time_scheduled", false),
+				mysql.ShowIndexFromTableRow("test_table", true, "PRIMARY", 1, "time_scheduled", false),
 			},
 		})
 	_, err = newTestLoadTable("USER_TABLE", "vitess_message,vt_ack_wait=30,vt_purge_after=120,vt_batch_size=1,vt_cache_size=10,vt_poller_interval=30", db)
@@ -164,9 +164,9 @@ func TestLoadTableMessage(t *testing.T) {
 		db.AddQuery(query, result)
 	}
 	_, err = newTestLoadTable("USER_TABLE", "vitess_message,vt_ack_wait=30,vt_purge_after=120,vt_batch_size=1,vt_cache_size=10,vt_poller_interval=30", db)
-	wanterr = "time_scheduled missing from message table: test_table"
-	if err == nil || err.Error() != wanterr {
-		t.Errorf("newTestLoadTable: %v, want %s", err, wanterr)
+	wanterr = "missing from message table: test_table"
+	if err == nil || !strings.Contains(err.Error(), wanterr) {
+		t.Errorf("newTestLoadTable: %v, must contain %s", err, wanterr)
 	}
 }
 
@@ -201,34 +201,33 @@ func getTestLoadTableQueries() map[string]*sqltypes.Result {
 			}},
 		},
 		"describe test_table": {
-			Fields:       mysqlconn.DescribeTableFields,
+			Fields:       mysql.DescribeTableFields,
 			RowsAffected: 3,
 			Rows: [][]sqltypes.Value{
-				mysqlconn.DescribeTableRow("pk", "int(11)", false, "PRI", "0"),
-				mysqlconn.DescribeTableRow("name", "int(11)", false, "", "0"),
-				mysqlconn.DescribeTableRow("addr", "int(11)", false, "", "0"),
+				mysql.DescribeTableRow("pk", "int(11)", false, "PRI", "0"),
+				mysql.DescribeTableRow("name", "int(11)", false, "", "0"),
+				mysql.DescribeTableRow("addr", "int(11)", false, "", "0"),
 			},
 		},
 		"show index from test_table": {
-			Fields:       mysqlconn.ShowIndexFromTableFields,
+			Fields:       mysql.ShowIndexFromTableFields,
 			RowsAffected: 3,
 			Rows: [][]sqltypes.Value{
-				mysqlconn.ShowIndexFromTableRow("test_table", true, "PRIMARY", 1, "pk", false),
-				mysqlconn.ShowIndexFromTableRow("test_table", true, "index", 1, "pk", false),
-				mysqlconn.ShowIndexFromTableRow("test_table", true, "index", 2, "name", false),
+				mysql.ShowIndexFromTableRow("test_table", true, "PRIMARY", 1, "pk", false),
+				mysql.ShowIndexFromTableRow("test_table", true, "index", 1, "pk", false),
+				mysql.ShowIndexFromTableRow("test_table", true, "index", 2, "name", false),
 			},
 		},
 	}
 }
 
 func getMessageTableQueries() map[string]*sqltypes.Result {
+	// id is intentionally after the message column to ensure that the
+	// loader still makes it the first one.
 	return map[string]*sqltypes.Result{
 		"select * from test_table where 1 != 1": {
 			Fields: []*querypb.Field{{
 				Name: "time_scheduled",
-				Type: sqltypes.Int64,
-			}, {
-				Name: "id",
 				Type: sqltypes.Int64,
 			}, {
 				Name: "time_next",
@@ -245,27 +244,30 @@ func getMessageTableQueries() map[string]*sqltypes.Result {
 			}, {
 				Name: "message",
 				Type: sqltypes.VarBinary,
+			}, {
+				Name: "id",
+				Type: sqltypes.Int64,
 			}},
 		},
 		"describe test_table": {
-			Fields:       mysqlconn.DescribeTableFields,
+			Fields:       mysql.DescribeTableFields,
 			RowsAffected: 7,
 			Rows: [][]sqltypes.Value{
-				mysqlconn.DescribeTableRow("time_scheduled", "bigint(20)", false, "", "0"),
-				mysqlconn.DescribeTableRow("id", "bigint(20)", false, "PRI", "0"),
-				mysqlconn.DescribeTableRow("time_next", "bigint(20)", false, "", "0"),
-				mysqlconn.DescribeTableRow("epoch", "bigint(20)", false, "", "0"),
-				mysqlconn.DescribeTableRow("time_created", "bigint(20)", false, "", "0"),
-				mysqlconn.DescribeTableRow("time_acked", "bigint(20)", false, "", "0"),
-				mysqlconn.DescribeTableRow("message", "bigint(20)", false, "", "0"),
+				mysql.DescribeTableRow("time_scheduled", "bigint(20)", false, "", "0"),
+				mysql.DescribeTableRow("time_next", "bigint(20)", false, "", "0"),
+				mysql.DescribeTableRow("epoch", "bigint(20)", false, "", "0"),
+				mysql.DescribeTableRow("time_created", "bigint(20)", false, "", "0"),
+				mysql.DescribeTableRow("time_acked", "bigint(20)", false, "", "0"),
+				mysql.DescribeTableRow("message", "bigint(20)", false, "", "0"),
+				mysql.DescribeTableRow("id", "bigint(20)", false, "PRI", "0"),
 			},
 		},
 		"show index from test_table": {
-			Fields:       mysqlconn.ShowIndexFromTableFields,
+			Fields:       mysql.ShowIndexFromTableFields,
 			RowsAffected: 2,
 			Rows: [][]sqltypes.Value{
-				mysqlconn.ShowIndexFromTableRow("test_table", true, "PRIMARY", 1, "time_scheduled", false),
-				mysqlconn.ShowIndexFromTableRow("test_table", true, "PRIMARY", 2, "id", false),
+				mysql.ShowIndexFromTableRow("test_table", true, "PRIMARY", 1, "time_scheduled", false),
+				mysql.ShowIndexFromTableRow("test_table", true, "PRIMARY", 2, "id", false),
 			},
 		},
 	}

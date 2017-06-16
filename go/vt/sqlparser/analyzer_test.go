@@ -57,11 +57,20 @@ func TestPreview(t *testing.T) {
 		{"use", StmtUse},
 		{"analyze", StmtOther},
 		{"describe", StmtOther},
+		{"desc", StmtOther},
 		{"explain", StmtOther},
 		{"repair", StmtOther},
 		{"optimize", StmtOther},
 		{"truncate", StmtOther},
 		{"unknown", StmtUnknown},
+
+		{"/* leading comment */ select ...", StmtSelect},
+		{"/* leading comment */ /* leading comment 2 */ select ...", StmtSelect},
+		{"-- leading single line comment \n select ...", StmtSelect},
+		{"-- leading single line comment \n -- leading single line comment 2\n select ...", StmtSelect},
+
+		{"/* leading comment no end select ...", StmtUnknown},
+		{"-- leading single line comment no end select ...", StmtUnknown},
 	}
 	for _, tcase := range testcases {
 		if got := Preview(tcase.sql); got != tcase.want {

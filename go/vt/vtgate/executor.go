@@ -63,6 +63,7 @@ type Executor struct {
 	mu           sync.Mutex
 	vschema      *vindexes.VSchema
 	normalize    bool
+	streamSize   int
 	plans        *cache.LRUCache
 	vschemaStats *VSchemaStats
 }
@@ -70,7 +71,7 @@ type Executor struct {
 var executorOnce sync.Once
 
 // NewExecutor creates a new Executor.
-func NewExecutor(ctx context.Context, serv topo.SrvTopoServer, cell, statsName string, resolver *Resolver, normalize bool) *Executor {
+func NewExecutor(ctx context.Context, serv topo.SrvTopoServer, cell, statsName string, resolver *Resolver, normalize bool, streamSize int) *Executor {
 	e := &Executor{
 		serv:        serv,
 		cell:        cell,
@@ -79,6 +80,7 @@ func NewExecutor(ctx context.Context, serv topo.SrvTopoServer, cell, statsName s
 		txConn:      resolver.scatterConn.txConn,
 		plans:       cache.NewLRUCache(10000),
 		normalize:   normalize,
+		streamSize:  streamSize,
 	}
 	e.watchSrvVSchema(ctx, cell)
 	executorOnce.Do(func() {
@@ -379,7 +381,44 @@ func (e *Executor) StreamExecute(ctx context.Context, session *vtgatepb.Session,
 	if err != nil {
 		return err
 	}
-	return plan.Instructions.StreamExecute(vcursor, bindVars, make(map[string]interface{}), true, callback)
+	result := &sqltypes.Result{}
+	byteCount := 0
+	err = plan.Instructions.StreamExecute(vcursor, bindVars, make(map[string]interface{}), true, func(qr *sqltypes.Result) error {
+		// If the row has field info, send it separately.
+		// TODO(sougou): this behavior is for handling tests because
+		// the framework currently sends all results as one packet.
+		if len(qr.Fields) > 0 {
+			qrfield := &sqltypes.Result{Fields: qr.Fields}
+			if err := callback(qrfield); err != nil {
+				return err
+			}
+		}
+
+		for _, row := range qr.Rows {
+			result.Rows = append(result.Rows, row)
+			for _, col := range row {
+				byteCount += col.Len()
+			}
+
+			if byteCount >= e.streamSize {
+				err := callback(result)
+				result = &sqltypes.Result{}
+				byteCount = 0
+				if err != nil {
+					return err
+				}
+			}
+		}
+		return nil
+	})
+
+	// Send left-over rows.
+	if len(result.Rows) > 0 {
+		if err := callback(result); err != nil {
+			return err
+		}
+	}
+	return err
 }
 
 // MessageAck acks messages.
@@ -399,7 +438,12 @@ func (e *Executor) MessageAck(ctx context.Context, keyspace, name string, ids []
 		"",
 		e,
 	)
+
 	newKeyspace, _, allShards, err := getKeyspaceShards(ctx, e.serv, e.cell, table.Keyspace.Name, topodatapb.TabletType_MASTER)
+	if err != nil {
+		return 0, err
+	}
+
 	shardIDs := make(map[string][]*querypb.Value)
 	if table.Keyspace.Sharded {
 		// We always use the (unique) primary vindex. The ID must be the

@@ -17,7 +17,6 @@ limitations under the License.
 package testlib
 
 import (
-	"fmt"
 	"io/ioutil"
 	"os"
 	"path"
@@ -25,8 +24,8 @@ import (
 
 	"golang.org/x/net/context"
 
-	"github.com/youtube/vitess/go/mysqlconn/fakesqldb"
-	"github.com/youtube/vitess/go/mysqlconn/replication"
+	"github.com/youtube/vitess/go/mysql"
+	"github.com/youtube/vitess/go/mysql/fakesqldb"
 	"github.com/youtube/vitess/go/sqltypes"
 	"github.com/youtube/vitess/go/vt/logutil"
 	"github.com/youtube/vitess/go/vt/mysqlctl"
@@ -98,8 +97,8 @@ func TestBackupRestore(t *testing.T) {
 	sourceTablet := NewFakeTablet(t, wr, "cell1", 1, topodatapb.TabletType_REPLICA, db)
 	sourceTablet.FakeMysqlDaemon.ReadOnly = true
 	sourceTablet.FakeMysqlDaemon.Replicating = true
-	sourceTablet.FakeMysqlDaemon.CurrentMasterPosition = replication.Position{
-		GTIDSet: replication.MariadbGTID{
+	sourceTablet.FakeMysqlDaemon.CurrentMasterPosition = mysql.Position{
+		GTIDSet: mysql.MariadbGTID{
 			Domain:   2,
 			Server:   123,
 			Sequence: 457,
@@ -137,8 +136,8 @@ func TestBackupRestore(t *testing.T) {
 	destTablet := NewFakeTablet(t, wr, "cell1", 2, topodatapb.TabletType_REPLICA, db)
 	destTablet.FakeMysqlDaemon.ReadOnly = true
 	destTablet.FakeMysqlDaemon.Replicating = true
-	destTablet.FakeMysqlDaemon.CurrentMasterPosition = replication.Position{
-		GTIDSet: replication.MariadbGTID{
+	destTablet.FakeMysqlDaemon.CurrentMasterPosition = mysql.Position{
+		GTIDSet: mysql.MariadbGTID{
 			Domain:   2,
 			Server:   123,
 			Sequence: 457,
@@ -163,7 +162,7 @@ func TestBackupRestore(t *testing.T) {
 	}
 	destTablet.FakeMysqlDaemon.SetSlavePositionCommandsPos = sourceTablet.FakeMysqlDaemon.CurrentMasterPosition
 	destTablet.FakeMysqlDaemon.SetSlavePositionCommandsResult = []string{"cmd1"}
-	destTablet.FakeMysqlDaemon.SetMasterCommandsInput = fmt.Sprintf("%v:%v", master.Tablet.Hostname, master.Tablet.PortMap["mysql"])
+	destTablet.FakeMysqlDaemon.SetMasterCommandsInput = topoproto.MysqlAddr(master.Tablet)
 	destTablet.FakeMysqlDaemon.SetMasterCommandsResult = []string{"set master cmd 1"}
 
 	destTablet.StartActionLoop(t, wr)

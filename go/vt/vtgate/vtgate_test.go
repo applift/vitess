@@ -881,7 +881,11 @@ func TestVTGateStreamExecute(t *testing.T) {
 	if err != nil {
 		t.Errorf("want nil, got %v", err)
 	}
-	want := []*sqltypes.Result{sandboxconn.SingleRowResult}
+	want := []*sqltypes.Result{{
+		Fields: sandboxconn.StreamRowResult.Fields,
+	}, {
+		Rows: sandboxconn.StreamRowResult.Rows,
+	}}
 	if !reflect.DeepEqual(want, qrs) {
 		t.Errorf("want \n%+v, got \n%+v", want, qrs)
 	}
@@ -1219,7 +1223,7 @@ func TestVTGateMessageStreamUnsharded(t *testing.T) {
 	<-done
 }
 
-func TestVTGateMessageAckUnsharded(t *testing.T) {
+func TestVTGateMessageAck(t *testing.T) {
 	ks := KsTestUnsharded
 	createSandbox(ks)
 	hcVTGateTest.Reset()
@@ -1240,6 +1244,44 @@ func TestVTGateMessageAckUnsharded(t *testing.T) {
 	}
 	if !sqltypes.Proto3ValuesEqual(sbc.MessageIDs, ids) {
 		t.Errorf("sbc1.MessageIDs: %v, want %v", sbc.MessageIDs, ids)
+	}
+}
+
+func TestVTGateMessageAckKeyspaceIds(t *testing.T) {
+	ks := KsTestUnsharded
+	createSandbox(ks)
+	hcVTGateTest.Reset()
+	sbc := hcVTGateTest.AddTestTablet("aa", "1.1.1.1", 1001, ks, "0", topodatapb.TabletType_MASTER, true, 1, nil)
+	idKeyspaceIDs := []*vtgatepb.IdKeyspaceId{
+		{
+			Id: &querypb.Value{
+				Type:  sqltypes.VarChar,
+				Value: []byte("1"),
+			},
+		},
+		{
+			Id: &querypb.Value{
+				Type:  sqltypes.VarChar,
+				Value: []byte("2"),
+			},
+		},
+	}
+	count, err := rpcVTGate.MessageAckKeyspaceIds(context.Background(), ks, "msg", idKeyspaceIDs)
+	if err != nil {
+		t.Error(err)
+	}
+	if count != 2 {
+		t.Errorf("MessageAck: %d, want 2", count)
+	}
+	wantids := []*querypb.Value{{
+		Type:  sqltypes.VarChar,
+		Value: []byte("1"),
+	}, {
+		Type:  sqltypes.VarChar,
+		Value: []byte("2"),
+	}}
+	if !sqltypes.Proto3ValuesEqual(sbc.MessageIDs, wantids) {
+		t.Errorf("sbc1.MessageIDs: %v, want %v", sbc.MessageIDs, wantids)
 	}
 }
 
