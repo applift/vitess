@@ -157,6 +157,7 @@ const (
 	ReasonUpsert
 	ReasonUpsertColMismatch
 	ReasonReplace
+	ReasonMultiTable
 )
 
 // Must exactly match order of reason constants.
@@ -169,6 +170,7 @@ var reasonName = []string{
 	"UPSERT",
 	"UPSERT_COL_MISMATCH",
 	"REPLACE",
+	"MULTI_TABLE",
 }
 
 // String returns a string representation of a ReasonType.
@@ -231,9 +233,6 @@ type Plan struct {
 
 	// For PlanInsertSubquery: pk columns in the subquery result.
 	SubqueryPKColumns []int
-
-	// For PlanInsertMessage. Query used to reload inserted messages.
-	MessageReloaderQuery *sqlparser.ParsedQuery
 }
 
 // TableName returns the table name for the plan.
@@ -305,7 +304,7 @@ func BuildStreaming(sql string, tables map[string]*schema.Table) (plan *Plan, er
 		if tableName := analyzeFrom(stmt.From); !tableName.IsEmpty() {
 			plan.setTable(tableName, tables)
 		}
-	case *sqlparser.Union:
+	case *sqlparser.Other, *sqlparser.Show, *sqlparser.Union:
 		// pass
 	default:
 		return nil, fmt.Errorf("'%v' not allowed for streaming", sqlparser.String(stmt))

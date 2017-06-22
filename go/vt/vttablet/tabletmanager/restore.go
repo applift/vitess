@@ -23,7 +23,7 @@ import (
 	log "github.com/golang/glog"
 	"golang.org/x/net/context"
 
-	"github.com/youtube/vitess/go/mysqlconn/replication"
+	"github.com/youtube/vitess/go/mysql"
 	"github.com/youtube/vitess/go/vt/logutil"
 	"github.com/youtube/vitess/go/vt/mysqlctl"
 	"github.com/youtube/vitess/go/vt/topo/topoproto"
@@ -119,7 +119,7 @@ func (agent *ActionAgent) restoreDataLocked(ctx context.Context, logger logutil.
 	return nil
 }
 
-func (agent *ActionAgent) startReplication(ctx context.Context, pos replication.Position, tabletType topodatapb.TabletType) error {
+func (agent *ActionAgent) startReplication(ctx context.Context, pos mysql.Position, tabletType topodatapb.TabletType) error {
 	cmds, err := agent.MysqlDaemon.ResetSlaveCommands()
 	if err != nil {
 		return err
@@ -171,7 +171,7 @@ func (agent *ActionAgent) startReplication(ctx context.Context, pos replication.
 	}
 
 	// Set master and start slave.
-	cmds, err = agent.MysqlDaemon.SetMasterCommands(ti.Hostname, int(ti.PortMap["mysql"]))
+	cmds, err = agent.MysqlDaemon.SetMasterCommands(topoproto.MysqlHostname(ti.Tablet), int(topoproto.MysqlPort(ti.Tablet)))
 	if err != nil {
 		return fmt.Errorf("MysqlDaemon.SetMasterCommands failed: %v", err)
 	}

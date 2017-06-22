@@ -141,6 +141,9 @@ func BuildConverted(typ querypb.Type, goval interface{}) (v Value, err error) {
 			}
 		}
 	}
+	// TODO(sougou): We should not call BuildValue here, because it
+	// may build a Value of a different type than requested. Things
+	// work for now because the value is eventually just passed through.
 	return BuildValue(goval)
 }
 
@@ -148,6 +151,9 @@ func BuildConverted(typ querypb.Type, goval interface{}) (v Value, err error) {
 // matches the requested type. If type is an integral it's converted to
 // a cannonical form. Otherwise, the original representation is preserved.
 func ValueFromBytes(typ querypb.Type, val []byte) (v Value, err error) {
+	if !IsTypeValid(typ) {
+		return NULL, fmt.Errorf("type: %v is invalid", typ)
+	}
 	switch {
 	case IsSigned(typ):
 		signed, err := strconv.ParseInt(string(val), 0, 64)
@@ -161,8 +167,6 @@ func ValueFromBytes(typ querypb.Type, val []byte) (v Value, err error) {
 			return NULL, err
 		}
 		v = MakeTrusted(typ, strconv.AppendUint(nil, unsigned, 10))
-	case typ == Tuple:
-		return NULL, errors.New("tuple not allowed for ValueFromBytes")
 	case IsFloat(typ) || typ == Decimal:
 		_, err := strconv.ParseFloat(string(val), 64)
 		if err != nil {
@@ -200,6 +204,15 @@ func (v Value) Type() querypb.Type {
 // bytes as read-only.
 func (v Value) Raw() []byte {
 	return v.val
+}
+
+// Bytes returns a copy of the raw data. All types are currently implemented as []byte.
+// Use this function instead of Raw if you can't be sure about maintaining the read-only
+// requirements of the bytes.
+func (v Value) Bytes() []byte {
+	out := make([]byte, len(v.val))
+	copy(out, v.val)
+	return out
 }
 
 // Len returns the length.
@@ -248,18 +261,24 @@ func (v Value) ToProtoValue() *querypb.Value {
 
 // ParseInt64 will parse a Value into an int64. It does
 // not check the type.
+// TODO(sougou): deprecate this function in favor of a
+// more type-aware implemention in arithmetic.
 func (v Value) ParseInt64() (val int64, err error) {
 	return strconv.ParseInt(v.String(), 10, 64)
 }
 
 // ParseUint64 will parse a Value into a uint64. It does
 // not check the type.
+// TODO(sougou): deprecate this function in favor of a
+// more type-aware implemention in arithmetic.
 func (v Value) ParseUint64() (val uint64, err error) {
 	return strconv.ParseUint(v.String(), 10, 64)
 }
 
 // ParseFloat64 will parse a Value into an float64. It does
 // not check the type.
+// TODO(sougou): deprecate this function in favor of a
+// more type-aware implemention in arithmetic.
 func (v Value) ParseFloat64() (val float64, err error) {
 	return strconv.ParseFloat(v.String(), 64)
 }

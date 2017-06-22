@@ -17,11 +17,10 @@ limitations under the License.
 package testlib
 
 import (
-	"fmt"
 	"strings"
 	"testing"
 
-	"github.com/youtube/vitess/go/mysqlconn/replication"
+	"github.com/youtube/vitess/go/mysql"
 	"github.com/youtube/vitess/go/vt/logutil"
 	"github.com/youtube/vitess/go/vt/topo/memorytopo"
 	"github.com/youtube/vitess/go/vt/topo/topoproto"
@@ -47,15 +46,15 @@ func TestPlannedReparentShard(t *testing.T) {
 	// new master
 	newMaster.FakeMysqlDaemon.ReadOnly = true
 	newMaster.FakeMysqlDaemon.Replicating = true
-	newMaster.FakeMysqlDaemon.WaitMasterPosition = replication.Position{
-		GTIDSet: replication.MariadbGTID{
+	newMaster.FakeMysqlDaemon.WaitMasterPosition = mysql.Position{
+		GTIDSet: mysql.MariadbGTID{
 			Domain:   7,
 			Server:   123,
 			Sequence: 990,
 		},
 	}
-	newMaster.FakeMysqlDaemon.PromoteSlaveResult = replication.Position{
-		GTIDSet: replication.MariadbGTID{
+	newMaster.FakeMysqlDaemon.PromoteSlaveResult = mysql.Position{
+		GTIDSet: mysql.MariadbGTID{
 			Domain:   7,
 			Server:   456,
 			Sequence: 991,
@@ -73,7 +72,7 @@ func TestPlannedReparentShard(t *testing.T) {
 	oldMaster.FakeMysqlDaemon.ReadOnly = false
 	oldMaster.FakeMysqlDaemon.Replicating = false
 	oldMaster.FakeMysqlDaemon.DemoteMasterPosition = newMaster.FakeMysqlDaemon.WaitMasterPosition
-	oldMaster.FakeMysqlDaemon.SetMasterCommandsInput = fmt.Sprintf("%v:%v", newMaster.Tablet.Hostname, newMaster.Tablet.PortMap["mysql"])
+	oldMaster.FakeMysqlDaemon.SetMasterCommandsInput = topoproto.MysqlAddr(newMaster.Tablet)
 	oldMaster.FakeMysqlDaemon.SetMasterCommandsResult = []string{"set master cmd 1"}
 	oldMaster.FakeMysqlDaemon.ExpectedExecuteSuperQueryList = []string{
 		"set master cmd 1",
@@ -86,7 +85,7 @@ func TestPlannedReparentShard(t *testing.T) {
 	// good slave 1 is replicating
 	goodSlave1.FakeMysqlDaemon.ReadOnly = true
 	goodSlave1.FakeMysqlDaemon.Replicating = true
-	goodSlave1.FakeMysqlDaemon.SetMasterCommandsInput = fmt.Sprintf("%v:%v", newMaster.Tablet.Hostname, newMaster.Tablet.PortMap["mysql"])
+	goodSlave1.FakeMysqlDaemon.SetMasterCommandsInput = topoproto.MysqlAddr(newMaster.Tablet)
 	goodSlave1.FakeMysqlDaemon.SetMasterCommandsResult = []string{"set master cmd 1"}
 	goodSlave1.FakeMysqlDaemon.ExpectedExecuteSuperQueryList = []string{
 		"STOP SLAVE",
@@ -99,7 +98,7 @@ func TestPlannedReparentShard(t *testing.T) {
 	// good slave 2 is not replicating
 	goodSlave2.FakeMysqlDaemon.ReadOnly = true
 	goodSlave2.FakeMysqlDaemon.Replicating = false
-	goodSlave2.FakeMysqlDaemon.SetMasterCommandsInput = fmt.Sprintf("%v:%v", newMaster.Tablet.Hostname, newMaster.Tablet.PortMap["mysql"])
+	goodSlave2.FakeMysqlDaemon.SetMasterCommandsInput = topoproto.MysqlAddr(newMaster.Tablet)
 	goodSlave2.FakeMysqlDaemon.SetMasterCommandsResult = []string{"set master cmd 1"}
 	goodSlave2.StartActionLoop(t, wr)
 	goodSlave2.FakeMysqlDaemon.ExpectedExecuteSuperQueryList = []string{

@@ -112,7 +112,6 @@ public class VitessPreparedStatement extends VitessStatement implements Prepared
         VTGateConn vtGateConn;
         Topodata.TabletType tabletType;
         Cursor cursor;
-        boolean showSql;
 
         checkOpen();
         closeOpenResultSetAndResetCount();
@@ -123,12 +122,8 @@ public class VitessPreparedStatement extends VitessStatement implements Prepared
         vtGateConn = this.vitessConnection.getVtGateConn();
         tabletType = this.vitessConnection.getTabletType();
 
-        showSql = StringUtils.startsWithIgnoreCaseAndWs(this.sql, Constants.SQL_SHOW);
         try {
-            if (showSql) {
-                cursor = this.executeShow(this.sql);
-            } else {
-                if (tabletType != Topodata.TabletType.MASTER || this.vitessConnection
+            if (tabletType != Topodata.TabletType.MASTER || this.vitessConnection
                     .getAutoCommit()) {
                     Context context =
                         this.vitessConnection.createContext(this.queryTimeoutInMillis);
@@ -141,18 +136,17 @@ public class VitessPreparedStatement extends VitessStatement implements Prepared
                             .streamExecute(context, this.sql, this.bindVariables, tabletType, vitessConnection.getIncludedFields());
                     }
                 } else {
-                    VTGateTx vtGateTx = this.vitessConnection.getVtGateTx();
-                    if (vtGateTx == null) {
-                        Context context =
-                            this.vitessConnection.createContext(this.queryTimeoutInMillis);
-                        vtGateTx = vtGateConn.begin(context).checkedGet();
-                        this.vitessConnection.setVtGateTx(vtGateTx);
-                    }
+                VTGateTx vtGateTx = this.vitessConnection.getVtGateTx();
+                if (vtGateTx == null) {
                     Context context =
-                        this.vitessConnection.createContext(this.queryTimeoutInMillis);
-                    cursor = vtGateTx.execute(context, this.sql, this.bindVariables, tabletType, vitessConnection.getIncludedFields())
-                        .checkedGet();
+                            this.vitessConnection.createContext(this.queryTimeoutInMillis);
+                    vtGateTx = vtGateConn.begin(context).checkedGet();
+                    this.vitessConnection.setVtGateTx(vtGateTx);
                 }
+                Context context =
+                        this.vitessConnection.createContext(this.queryTimeoutInMillis);
+                cursor = vtGateTx.execute(context, this.sql, this.bindVariables, tabletType, vitessConnection.getIncludedFields())
+                        .checkedGet();
             }
 
             if (null == cursor) {
@@ -176,6 +170,7 @@ public class VitessPreparedStatement extends VitessStatement implements Prepared
         int truncatedUpdateCount;
 
         checkOpen();
+        checkNotReadOnly();
         closeOpenResultSetAndResetCount();
 
         vtGateConn = this.vitessConnection.getVtGateConn();
@@ -233,24 +228,14 @@ public class VitessPreparedStatement extends VitessStatement implements Prepared
     }
 
     public boolean execute() throws SQLException {
-        Cursor cursor;
-        boolean selectSql;
-        boolean showSql;
+        boolean selectOrShowSql;
 
         checkOpen();
         closeOpenResultSetAndResetCount();
 
-        selectSql = StringUtils.startsWithIgnoreCaseAndWs(this.sql, Constants.SQL_SELECT);
-        showSql = StringUtils.startsWithIgnoreCaseAndWs(this.sql, Constants.SQL_SHOW);
+        selectOrShowSql = StringUtils.startsWithIgnoreCaseAndWs(this.sql, Constants.SQL_S);
 
-        if (showSql) {
-            cursor = this.executeShow(this.sql);
-            if (!(null == cursor || null == cursor.getFields() || cursor.getFields().isEmpty())) {
-                this.vitessResultSet = new VitessResultSet(cursor, this);
-                return true;
-            }
-            throw new SQLException(Constants.SQLExceptionMessages.METHOD_CALL_FAILED);
-        } else if (selectSql) {
+        if (selectOrShowSql) {
             this.executeQuery();
             return true;
         } else {
@@ -428,6 +413,14 @@ public class VitessPreparedStatement extends VitessStatement implements Prepared
      */
     @Override public int[] executeBatch() throws SQLException {
         checkOpen();
+        // An executeBatch can't contain SELECT statements as defined by the documentation:
+        // https://docs.oracle.com/javase/tutorial/jdbc/basics/retrieving.html
+        // "This list may contain statements for updating, inserting, or deleting a row; and it may
+        // also contain DDL statements such as CREATE TABLE and DROP TABLE. It cannot, however,
+        // contain a statement that would produce a ResultSet object, such as a SELECT statement.
+        // In other words, the list can contain only statements that produce an update count."
+        checkNotReadOnly();
+
         VTGateConn vtGateConn;
         Topodata.TabletType tabletType;
         VTGateTx vtGateTx;

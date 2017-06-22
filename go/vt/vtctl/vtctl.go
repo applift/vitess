@@ -95,7 +95,6 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
-	"net"
 	"sort"
 	"strconv"
 	"strings"
@@ -108,7 +107,7 @@ import (
 	"golang.org/x/net/context"
 
 	"github.com/youtube/vitess/go/flagutil"
-	"github.com/youtube/vitess/go/mysqlconn/replication"
+	"github.com/youtube/vitess/go/mysql"
 	"github.com/youtube/vitess/go/sqltypes"
 	"github.com/youtube/vitess/go/sync2"
 	hk "github.com/youtube/vitess/go/vt/hook"
@@ -617,7 +616,8 @@ func commandInitTablet(ctx context.Context, wr *wrangler.Wrangler, subFlags *fla
 	allowMasterOverride := subFlags.Bool("allow_master_override", false, "Use this flag to force initialization if a tablet is created as master, and a master for the keyspace/shard already exists. Use with caution.")
 	createShardAndKeyspace := subFlags.Bool("parent", false, "Creates the parent shard and keyspace if they don't yet exist")
 	hostname := subFlags.String("hostname", "", "The server on which the tablet is running")
-	mysqlPort := subFlags.Int("mysql_port", 0, "The mysql port for the mysql daemon")
+	mysqlHost := subFlags.String("mysql_host", "", "The mysql host for the mysql server")
+	mysqlPort := subFlags.Int("mysql_port", 0, "The mysql port for the mysql server")
 	port := subFlags.Int("port", 0, "The main port for the vttablet process")
 	grpcPort := subFlags.Int("grpc_port", 0, "The gRPC port for the vttablet process")
 	keyspace := subFlags.String("keyspace", "", "The keyspace to which this tablet belongs")
@@ -645,6 +645,7 @@ func commandInitTablet(ctx context.Context, wr *wrangler.Wrangler, subFlags *fla
 	tablet := &topodatapb.Tablet{
 		Alias:          tabletAlias,
 		Hostname:       *hostname,
+		MysqlHostname:  *mysqlHost,
 		PortMap:        make(map[string]int32),
 		Keyspace:       *keyspace,
 		Shard:          *shard,
@@ -656,7 +657,7 @@ func commandInitTablet(ctx context.Context, wr *wrangler.Wrangler, subFlags *fla
 		tablet.PortMap["vt"] = int32(*port)
 	}
 	if *mysqlPort != 0 {
-		tablet.PortMap["mysql"] = int32(*mysqlPort)
+		topoproto.SetMysqlPort(tablet, int32(*mysqlPort))
 	}
 	if *grpcPort != 0 {
 		tablet.PortMap["grpc"] = int32(*grpcPort)
@@ -687,7 +688,7 @@ func commandGetTablet(ctx context.Context, wr *wrangler.Wrangler, subFlags *flag
 
 func commandUpdateTabletAddrs(ctx context.Context, wr *wrangler.Wrangler, subFlags *flag.FlagSet, args []string) error {
 	hostname := subFlags.String("hostname", "", "The fully qualified host name of the server on which the tablet is running.")
-	ipAddr := subFlags.String("ip-addr", "", "IP address")
+	mysqlHost := subFlags.String("mysql_host", "", "The mysql host for the mysql server")
 	mysqlPort := subFlags.Int("mysql-port", 0, "The mysql port for the mysql daemon")
 	vtPort := subFlags.Int("vt-port", 0, "The main port for the vttablet process")
 	grpcPort := subFlags.Int("grpc-port", 0, "The gRPC port for the vttablet process")
@@ -698,20 +699,18 @@ func commandUpdateTabletAddrs(ctx context.Context, wr *wrangler.Wrangler, subFla
 	if subFlags.NArg() != 1 {
 		return fmt.Errorf("the <tablet alias> argument is required for the UpdateTabletAddrs command")
 	}
-	if *ipAddr != "" && net.ParseIP(*ipAddr) == nil {
-		return fmt.Errorf("malformed address: %v", *ipAddr)
-	}
 
 	tabletAlias, err := topoproto.ParseTabletAlias(subFlags.Arg(0))
 	if err != nil {
 		return err
 	}
+
 	_, err = wr.TopoServer().UpdateTabletFields(ctx, tabletAlias, func(tablet *topodatapb.Tablet) error {
 		if *hostname != "" {
 			tablet.Hostname = *hostname
 		}
-		if *ipAddr != "" {
-			tablet.Ip = *ipAddr
+		if *mysqlHost != "" {
+			tablet.MysqlHostname = *mysqlHost
 		}
 		if *vtPort != 0 || *grpcPort != 0 || *mysqlPort != 0 {
 			if tablet.PortMap == nil {
@@ -724,7 +723,7 @@ func commandUpdateTabletAddrs(ctx context.Context, wr *wrangler.Wrangler, subFla
 				tablet.PortMap["grpc"] = int32(*grpcPort)
 			}
 			if *mysqlPort != 0 {
-				tablet.PortMap["mysql"] = int32(*mysqlPort)
+				topoproto.SetMysqlPort(tablet, int32(*mysqlPort))
 			}
 		}
 		return nil
@@ -2224,11 +2223,11 @@ func (rts rTablets) Less(i, j int) bool {
 		return false
 	}
 	// then compare replication positions
-	lpos, err := replication.DecodePosition(l.Position)
+	lpos, err := mysql.DecodePosition(l.Position)
 	if err != nil {
 		return true
 	}
-	rpos, err := replication.DecodePosition(r.Position)
+	rpos, err := mysql.DecodePosition(r.Position)
 	if err != nil {
 		return false
 	}
@@ -2284,6 +2283,14 @@ func MarshalJSON(obj interface{}) (data []byte, err error) {
 			return nil, fmt.Errorf("jsonpb error: %v", err)
 		}
 		data = b.Bytes()
+	case []string:
+		if len(obj) == 0 {
+			return []byte{'[', ']'}, nil
+		}
+		data, err = json.MarshalIndent(obj, "", "  ")
+		if err != nil {
+			return nil, fmt.Errorf("json error: %v", err)
+		}
 	default:
 		data, err = json.MarshalIndent(obj, "", "  ")
 		if err != nil {

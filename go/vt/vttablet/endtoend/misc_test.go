@@ -30,7 +30,7 @@ import (
 	"github.com/golang/protobuf/proto"
 	"golang.org/x/net/context"
 
-	"github.com/youtube/vitess/go/sqldb"
+	"github.com/youtube/vitess/go/mysql"
 	"github.com/youtube/vitess/go/sqltypes"
 	"github.com/youtube/vitess/go/vt/sqlparser"
 	"github.com/youtube/vitess/go/vt/vttablet/endtoend/framework"
@@ -241,7 +241,8 @@ func TestUpsertNonPKHit(t *testing.T) {
 }
 
 func TestSchemaReload(t *testing.T) {
-	conn, err := sqldb.Connect(connParams)
+	ctx := context.Background()
+	conn, err := mysql.Connect(ctx, &connParams)
 	if err != nil {
 		t.Error(err)
 		return
@@ -275,7 +276,8 @@ func TestSchemaReload(t *testing.T) {
 }
 
 func TestSidecarTables(t *testing.T) {
-	conn, err := sqldb.Connect(connParams)
+	ctx := context.Background()
+	conn, err := mysql.Connect(ctx, &connParams)
 	if err != nil {
 		t.Error(err)
 		return
@@ -303,11 +305,11 @@ func TestConsolidation(t *testing.T) {
 	var wg sync.WaitGroup
 	wg.Add(2)
 	go func() {
-		framework.NewClient().Execute("select sleep(0.25) from dual", nil)
+		framework.NewClient().Execute("select sleep(0.5) from dual", nil)
 		wg.Done()
 	}()
 	go func() {
-		framework.NewClient().Execute("select sleep(0.25) from dual", nil)
+		framework.NewClient().Execute("select sleep(0.5) from dual", nil)
 		wg.Done()
 	}()
 	wg.Wait()
