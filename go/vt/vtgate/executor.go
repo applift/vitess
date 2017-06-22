@@ -98,18 +98,6 @@ func (e *Executor) Execute(ctx context.Context, session *vtgatepb.Session, sql s
 
 	switch sqlparser.Preview(sql) {
 	case sqlparser.StmtSelect:
-		if sql == "select @@version_comment limit 1" {
-			return &sqltypes.Result{
-				Fields: []*querypb.Field{{
-					Name: "@@version_comment",
-					Type: sqltypes.VarChar,
-				}},
-				Rows: [][]sqltypes.Value{{
-					sqltypes.MakeTrusted(sqltypes.VarChar, []byte("MySQL Community Server (GPL)")),
-				}},
-				RowsAffected: 1,
-			}, nil
-		}
 		return e.handleExec(ctx, session, sql, bindVars)
 	case sqlparser.StmtInsert, sqlparser.StmtReplace, sqlparser.StmtUpdate, sqlparser.StmtDelete:
 		nsf := NewSafeSession(session)
@@ -393,6 +381,11 @@ func (e *Executor) StreamExecute(ctx context.Context, session *vtgatepb.Session,
 	if err != nil {
 		return err
 	}
+
+	// Some of the underlying primitives may send results one row at a time.
+	// So, we need the ability to consolidate those into reasonable chunks.
+	// The callback wrapper below accumulates rows and sends them as chunks
+	// dictated by stream_buffer_size.
 	result := &sqltypes.Result{}
 	byteCount := 0
 	err = plan.Instructions.StreamExecute(vcursor, bindVars, make(map[string]interface{}), true, func(qr *sqltypes.Result) error {

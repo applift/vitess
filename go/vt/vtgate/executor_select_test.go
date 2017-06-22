@@ -208,7 +208,8 @@ func TestStreamUnsharded(t *testing.T) {
 func TestStreamBuffering(t *testing.T) {
 	executor, _, _, sbclookup := createExecutorEnv()
 
-	// Set each result to be >10 bytes, which is the buffer size for tests.
+	// This test is similar to TestStreamUnsharded except that it returns a Result > 10 bytes,
+	// such that the splitting of the Result into multiple Result responses gets tested.
 	sbclookup.SetResults([]*sqltypes.Result{{
 		Fields: []*querypb.Field{
 			{Name: "id", Type: sqltypes.Int32},
@@ -275,7 +276,7 @@ func TestShardFail(t *testing.T) {
 	getSandbox(KsTestUnsharded).SrvKeyspaceMustFail = 1
 
 	_, err := executorExec(executor, "select id from sharded_table where id = 1", nil)
-	want := "paramsAllShards: unsharded keyspace TestBadSharding has multiple shards: possible cause: sharded keyspace is marked as unsharded in vschema"
+	want := "paramsAllShards: unsharded keyspace TestXBadSharding has multiple shards: possible cause: sharded keyspace is marked as unsharded in vschema"
 	if err == nil || err.Error() != want {
 		t.Errorf("executorExec: %v, want %v", err, want)
 	}
@@ -418,6 +419,30 @@ func TestSelectEqual(t *testing.T) {
 	}}
 	if !reflect.DeepEqual(sbclookup.Queries, wantQueries) {
 		t.Errorf("sbclookup.Queries: %+v, want %+v\n", sbclookup.Queries, wantQueries)
+	}
+}
+
+func TestSelectDual(t *testing.T) {
+	executor, sbc1, _, lookup := createExecutorEnv()
+
+	_, err := executorExec(executor, "select @@aa.bb from dual", nil)
+	if err != nil {
+		t.Error(err)
+	}
+	wantQueries := []querytypes.BoundQuery{{
+		Sql:           "select @@aa.bb from dual",
+		BindVariables: map[string]interface{}{},
+	}}
+	if !reflect.DeepEqual(sbc1.Queries, wantQueries) {
+		t.Errorf("sbc1.Queries: %+v, want %+v\n", sbc1.Queries, wantQueries)
+	}
+
+	_, err = executorExec(executor, "select @@aa.bb from TestUnsharded.dual", nil)
+	if err != nil {
+		t.Error(err)
+	}
+	if !reflect.DeepEqual(lookup.Queries, wantQueries) {
+		t.Errorf("sbc1.Queries: %+v, want %+v\n", sbc1.Queries, wantQueries)
 	}
 }
 
@@ -825,7 +850,7 @@ func TestSelectScatter(t *testing.T) {
 		sbc := hc.AddTestTablet(cell, shard, 1, "TestExecutor", shard, topodatapb.TabletType_MASTER, true, 1, nil)
 		conns = append(conns, sbc)
 	}
-	executor := NewExecutor(context.Background(), serv, cell, "", resolver, false, 10)
+	executor := NewExecutor(context.Background(), serv, cell, "", resolver, false, testBufferSize)
 
 	_, err := executorExec(executor, "select id from user", nil)
 	if err != nil {
@@ -857,7 +882,7 @@ func TestStreamSelectScatter(t *testing.T) {
 		sbc := hc.AddTestTablet(cell, shard, 1, "TestExecutor", shard, topodatapb.TabletType_MASTER, true, 1, nil)
 		conns = append(conns, sbc)
 	}
-	executor := NewExecutor(context.Background(), serv, cell, "", resolver, false, 10)
+	executor := NewExecutor(context.Background(), serv, cell, "", resolver, false, testBufferSize)
 
 	sql := "select id from user"
 	result, err := executorStream(executor, sql)
@@ -898,7 +923,7 @@ func TestSelectScatterFail(t *testing.T) {
 	}
 	serv := new(sandboxTopo)
 	resolver := newTestResolver(hc, serv, cell)
-	executor := NewExecutor(context.Background(), serv, cell, "", resolver, false, 10)
+	executor := NewExecutor(context.Background(), serv, cell, "", resolver, false, testBufferSize)
 
 	_, err := executorExec(executor, "select id from user", nil)
 	want := "paramsAllShards: keyspace TestExecutor fetch error: topo error GetSrvKeyspace"
@@ -935,7 +960,7 @@ func TestSelectScatterOrderBy(t *testing.T) {
 		}})
 		conns = append(conns, sbc)
 	}
-	executor := NewExecutor(context.Background(), serv, cell, "", resolver, false, 10)
+	executor := NewExecutor(context.Background(), serv, cell, "", resolver, false, testBufferSize)
 
 	query := "select col1, col2 from user order by col2 desc"
 	gotResult, err := executorExec(executor, query, nil)
@@ -976,8 +1001,6 @@ func TestSelectScatterOrderBy(t *testing.T) {
 	}
 }
 
-// TestSelectScatterOrderBy will run an ORDER BY query that will scatter out to 8 shards, with
-// the order by column as VarChar, which is unsupported.
 func TestStreamSelectScatterOrderBy(t *testing.T) {
 	// Special setup: Don't use createExecutorEnv.
 	cell := "aa"
@@ -1041,6 +1064,8 @@ func TestStreamSelectScatterOrderBy(t *testing.T) {
 	}
 }
 
+// TestSelectScatterOrderByFail will run an ORDER BY query that will scatter out to 8 shards, with
+// the order by column as VarChar, which is unsupported.
 func TestSelectScatterOrderByFail(t *testing.T) {
 	// Special setup: Don't use createExecutorEnv.
 	cell := "aa"
@@ -1066,7 +1091,7 @@ func TestSelectScatterOrderByFail(t *testing.T) {
 			}},
 		}})
 	}
-	executor := NewExecutor(context.Background(), serv, cell, "", resolver, false, 10)
+	executor := NewExecutor(context.Background(), serv, cell, "", resolver, false, testBufferSize)
 
 	_, err := executorExec(executor, "select id, col from user order by col asc", nil)
 	want := "text fields cannot be compared"
@@ -1075,7 +1100,7 @@ func TestSelectScatterOrderByFail(t *testing.T) {
 	}
 }
 
-// TestSelectScatterOrderBy will run an aggregate query that will scatter out to 8 shards and return 4 aggregated rows.
+// TestSelectScatterAggregate will run an aggregate query that will scatter out to 8 shards and return 4 aggregated rows.
 func TestSelectScatterAggregate(t *testing.T) {
 	// Special setup: Don't use createExecutorEnv.
 	cell := "aa"
@@ -1103,7 +1128,7 @@ func TestSelectScatterAggregate(t *testing.T) {
 		}})
 		conns = append(conns, sbc)
 	}
-	executor := NewExecutor(context.Background(), serv, cell, "", resolver, false, 10)
+	executor := NewExecutor(context.Background(), serv, cell, "", resolver, false, testBufferSize)
 
 	query := "select col, sum(foo) from user group by col"
 	gotResult, err := executorExec(executor, query, nil)

@@ -93,7 +93,7 @@
   }
 }
 
-# simple aggregate
+# count aggregate
 "select count(*) from user"
 {
   "Original": "select count(*) from user",
@@ -113,6 +113,78 @@
       },
       "Query": "select count(*) from user",
       "FieldQuery": "select count(*) from user where 1 != 1"
+    }
+  }
+}
+
+# sum aggregate
+"select sum(col) from user"
+{
+  "Original": "select sum(col) from user",
+  "Instructions": {
+    "Aggregates": [
+      {
+        "Opcode": "sum",
+        "Col": 0
+      }
+    ],
+    "Keys": null,
+    "Input": {
+      "Opcode": "SelectScatter",
+      "Keyspace": {
+        "Name": "user",
+        "Sharded": true
+      },
+      "Query": "select sum(col) from user",
+      "FieldQuery": "select sum(col) from user where 1 != 1"
+    }
+  }
+}
+
+# min aggregate
+"select min(col) from user"
+{
+  "Original": "select min(col) from user",
+  "Instructions": {
+    "Aggregates": [
+      {
+        "Opcode": "min",
+        "Col": 0
+      }
+    ],
+    "Keys": null,
+    "Input": {
+      "Opcode": "SelectScatter",
+      "Keyspace": {
+        "Name": "user",
+        "Sharded": true
+      },
+      "Query": "select min(col) from user",
+      "FieldQuery": "select min(col) from user where 1 != 1"
+    }
+  }
+}
+
+# max aggregate
+"select max(col) from user"
+{
+  "Original": "select max(col) from user",
+  "Instructions": {
+    "Aggregates": [
+      {
+        "Opcode": "max",
+        "Col": 0
+      }
+    ],
+    "Keys": null,
+    "Input": {
+      "Opcode": "SelectScatter",
+      "Keyspace": {
+        "Name": "user",
+        "Sharded": true
+      },
+      "Query": "select max(col) from user",
+      "FieldQuery": "select max(col) from user where 1 != 1"
     }
   }
 }
@@ -690,6 +762,50 @@
           "Desc": false
         }
       ]
+    }
+  }
+}
+
+# Scatter order by is complex
+"select col, count(*) from user group by col order by col+1"
+"unsupported: in scatter query: complex order by expression: col + 1"
+
+# invalid order by column numner for scatter
+"select col, count(*) from user group by col order by 5 limit 10"
+"invalid order by: column number out of range: 5"
+
+# aggregate with limit
+"select col, count(*) from user group by col limit 10"
+{
+  "Original": "select col, count(*) from user group by col limit 10",
+  "Instructions": {
+    "Opcode": "Limit",
+    "Count": 10,
+    "Input": {
+      "Aggregates": [
+        {
+          "Opcode": "count",
+          "Col": 1
+        }
+      ],
+      "Keys": [
+        0
+      ],
+      "Input": {
+        "Opcode": "SelectScatter",
+        "Keyspace": {
+          "Name": "user",
+          "Sharded": true
+        },
+        "Query": "select col, count(*) from user group by col order by col asc limit 10",
+        "FieldQuery": "select col, count(*) from user where 1 != 1 group by col",
+        "OrderBy": [
+          {
+            "Col": 0,
+            "Desc": false
+          }
+        ]
+      }
     }
   }
 }

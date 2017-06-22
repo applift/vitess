@@ -27,7 +27,7 @@ import (
 var _ Primitive = (*Limit)(nil)
 
 // Limit is a primitive that performs the LIMIT operation.
-// For now, it does not support offset.
+// For now, it only supports count without offset.
 type Limit struct {
 	Count interface{}
 	Input Primitive
@@ -80,7 +80,16 @@ func (l *Limit) StreamExecute(vcursor VCursor, bindVars, joinVars map[string]int
 				return err
 			}
 		}
+		if len(qr.Rows) == 0 {
+			return nil
+		}
 
+		if count == 0 {
+			// Unreachable: this is just a failsafe.
+			return io.EOF
+		}
+
+		// reduce count till 0.
 		result := &sqltypes.Result{Rows: qr.Rows}
 		if count > len(result.Rows) {
 			count -= len(result.Rows)
@@ -93,6 +102,9 @@ func (l *Limit) StreamExecute(vcursor VCursor, bindVars, joinVars map[string]int
 		}
 		return io.EOF
 	})
+
+	// We may get back the EOF we returned in the callback.
+	// If so, suppress it.
 	if err != nil && err != io.EOF {
 		return err
 	}
@@ -105,7 +117,8 @@ func (l *Limit) GetFields(vcursor VCursor, bindVars, joinVars map[string]interfa
 }
 
 func (l *Limit) fetchCount(bindVars, joinVars map[string]interface{}) (int, error) {
-	// TODO(sougou): check if this can be done by the supplier of joinVars instead.
+	// TODO(sougou): to avoid duplication, check if this can be done
+	// by the supplier of joinVars instead.
 	bindVars = combineVars(bindVars, joinVars)
 
 	resolved, err := resolveBindvar(l.Count, bindVars)

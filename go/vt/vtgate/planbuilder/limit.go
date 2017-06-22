@@ -82,7 +82,7 @@ func (l *limit) ResultColumns() []*resultColumn {
 
 // PushFilter satisfies the builder interface.
 func (l *limit) PushFilter(_ sqlparser.Expr, whereType string, _ columnOriginator) error {
-	return errors.New("unsupported: filtering on results of aggregates")
+	panic("BUG: unreachable")
 }
 
 // PushSelect satisfies the builder interface.
@@ -105,7 +105,10 @@ func (l *limit) PushOrderByNull() {
 	panic("BUG: unreachable")
 }
 
-// SetLimit sets the limit for the primitive.
+// SetLimit sets the limit for the primitive. It calls the underlying
+// primitive's SetUpperLimit, which is an optimization hint that informs
+// the underlying primitive that it doesn't need to return more rows than
+// specified.
 func (l *limit) SetLimit(limit *sqlparser.Limit) error {
 	if limit.Offset != nil {
 		return errors.New("unsupported: offset limit for cross-shard queries")

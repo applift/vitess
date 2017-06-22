@@ -73,9 +73,9 @@ type builder interface {
 	// just on optimization hint.
 	PushOrderByNull()
 
-	// SetUpperLimit asks the primitive to set an upper limit to
-	// the number of rows it returns. This is an optimization hint.
-	// A primitive that cannot perform this can ignore a request.
+	// SetUpperLimit is an optimization hint that tells that primitive
+	// that it need not return more than the specified number of rows.
+	// A primitive that cannot perform this can ignore the request.
 	SetUpperLimit(count interface{})
 
 	// PushMisc pushes miscelleaneous constructs to all the primitives.

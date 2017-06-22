@@ -36,9 +36,8 @@ import (
 // was pulled out. Since the input streams are sorted the same way that the heap is
 // sorted, this guarantees that the merged stream will also be sorted the same way.
 func mergeSort(vcursor VCursor, query string, orderBy []OrderbyParams, params *scatterParams, callback func(*sqltypes.Result) error) error {
-	// We could consider exposing vcursor's context and
-	// using that here. Needs to be discussed.
-	ctx := context.TODO()
+	ctx, cancel := context.WithCancel(vcursor.Context())
+	defer cancel()
 
 	handles := make([]*streamHandle, len(params.shardVars))
 	id := 0
@@ -46,11 +45,6 @@ func mergeSort(vcursor VCursor, query string, orderBy []OrderbyParams, params *s
 		handles[id] = runOneStream(ctx, vcursor, query, params.ks, shard, vars)
 		id++
 	}
-	defer func() {
-		for _, handle := range handles {
-			handle.cancel()
-		}
-	}()
 
 	// Fetch field info from just one stream.
 	fields := <-handles[0].fields
@@ -76,6 +70,8 @@ func mergeSort(vcursor VCursor, query string, orderBy []OrderbyParams, params *s
 				if handle.err != nil {
 					return handle.err
 				}
+				// It's possible that a stream returns no rows.
+				// If so, don't add anything to the heap.
 				continue
 			}
 			sh.rows = append(sh.rows, streamRow{row: row, id: i})
@@ -95,11 +91,13 @@ func mergeSort(vcursor VCursor, query string, orderBy []OrderbyParams, params *s
 	for len(sh.rows) != 0 {
 		sr := heap.Pop(sh).(streamRow)
 		if sh.err != nil {
+			// Unreachable: This should never fail.
 			return sh.err
 		}
 		if err := callback(&sqltypes.Result{Rows: [][]sqltypes.Value{sr.row}}); err != nil {
 			return err
 		}
+
 		select {
 		case row, ok := <-handles[sr.id].row:
 			if !ok {
@@ -126,37 +124,32 @@ func mergeSort(vcursor VCursor, query string, orderBy []OrderbyParams, params *s
 // channel. At the end of the stream, fields and row are closed. If there
 // was an error, err is set before the channels are closed. The mergeSort
 // routine that pulls the rows out of each streamHandle can abort the stream
-// by calling cancel.
+// by calling canceling the context.
 type streamHandle struct {
 	fields chan []*querypb.Field
 	row    chan []sqltypes.Value
 	err    error
-	cancel context.CancelFunc
 }
 
 // runOnestream starts a streaming query on one shard, and returns a streamHandle for it.
 func runOneStream(ctx context.Context, vcursor VCursor, query, ks, shard string, vars map[string]interface{}) *streamHandle {
-	ctx, cancel := context.WithCancel(ctx)
-	sh := &streamHandle{
+	handle := &streamHandle{
 		fields: make(chan []*querypb.Field, 1),
 		row:    make(chan []sqltypes.Value, 10),
-		cancel: cancel,
 	}
 
 	go func() {
-		defer func() {
-			close(sh.fields)
-			close(sh.row)
-		}()
+		defer close(handle.fields)
+		defer close(handle.row)
 
-		err := vcursor.StreamExecuteMulti(
+		handle.err = vcursor.StreamExecuteMulti(
 			query,
 			ks,
 			map[string]map[string]interface{}{shard: vars},
 			func(qr *sqltypes.Result) error {
 				if len(qr.Fields) != 0 {
 					select {
-					case sh.fields <- qr.Fields:
+					case handle.fields <- qr.Fields:
 					case <-ctx.Done():
 						return io.EOF
 					}
@@ -164,7 +157,7 @@ func runOneStream(ctx context.Context, vcursor VCursor, query, ks, shard string,
 
 				for _, row := range qr.Rows {
 					select {
-					case sh.row <- row:
+					case handle.row <- row:
 					case <-ctx.Done():
 						return io.EOF
 					}
@@ -172,12 +165,9 @@ func runOneStream(ctx context.Context, vcursor VCursor, query, ks, shard string,
 				return nil
 			},
 		)
-		if err != nil {
-			sh.err = err
-		}
 	}()
 
-	return sh
+	return handle
 }
 
 // A streamRow represents a row identified by the stream
@@ -187,7 +177,7 @@ type streamRow struct {
 	id  int
 }
 
-// scatterHeap is the heap that is used for merge_sorting.
+// scatterHeap is the heap that is used for merge-sorting.
 // You can push streamRow elements into it. Popping an
 // element will return the one with the lowest value
 // as defined by the orderBy criteria. If a comparison
