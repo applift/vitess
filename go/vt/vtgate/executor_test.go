@@ -114,7 +114,7 @@ func TestExecutorSet(t *testing.T) {
 		out: &vtgatepb.Session{Options: &querypb.ExecuteOptions{ClientFoundRows: true}},
 	}, {
 		in:  "set client_found_rows=0",
-		out: &vtgatepb.Session{},
+		out: &vtgatepb.Session{Options: &querypb.ExecuteOptions{}},
 	}, {
 		in:  "set client_found_rows='aa'",
 		err: "unexpected value type for client_found_rows: string",
@@ -140,11 +140,32 @@ func TestExecutorSet(t *testing.T) {
 		in:  "set transaction_mode = 1",
 		err: "unexpected value type for transaction_mode: int64",
 	}, {
+		in:  "set workload = 'unspecified'",
+		out: &vtgatepb.Session{Options: &querypb.ExecuteOptions{Workload: querypb.ExecuteOptions_UNSPECIFIED}},
+	}, {
+		in:  "set workload = 'oltp'",
+		out: &vtgatepb.Session{Options: &querypb.ExecuteOptions{Workload: querypb.ExecuteOptions_OLTP}},
+	}, {
+		in:  "set workload = 'olap'",
+		out: &vtgatepb.Session{Options: &querypb.ExecuteOptions{Workload: querypb.ExecuteOptions_OLAP}},
+	}, {
+		in:  "set workload = 'aa'",
+		err: "invalid workload: aa",
+	}, {
+		in:  "set workload = 1",
+		err: "unexpected value type for workload: int64",
+	}, {
 		in:  "set transaction_mode = 'twopc', autocommit=1",
 		out: &vtgatepb.Session{Autocommit: true, TransactionMode: vtgatepb.TransactionMode_TWOPC},
 	}, {
 		in:  "set autocommit=1+1",
 		err: "invalid syntax: 1 + 1",
+	}, {
+		in:  "set character_set_results=null",
+		out: &vtgatepb.Session{},
+	}, {
+		in:  "set character_set_results='abcd'",
+		err: "unexpected value for character_set_results: abcd",
 	}, {
 		in:  "set foo=1",
 		err: "unsupported construct: set foo=1",
